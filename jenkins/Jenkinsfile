@@ -1,0 +1,75 @@
+pipeline {
+    agent any
+
+    environment {
+        AWS_REGION   = 'us-east-1'
+        TF_DIR       = 'terraform/envs/prod'
+        ECR_REPO     = 'expense-tracker-backend'
+        CLUSTER_NAME = 'expense-tracker-eks'
+    }
+
+    options {
+        timeout(time: 45, unit: 'MINUTES')
+        disableConcurrentBuilds()
+    }
+
+    stages {
+        stage('Checkout') {
+            steps { checkout scm }
+        }
+
+        stage('Terraform Init/Plan') {
+            steps {
+                dir(env.TF_DIR) {
+                    sh 'terraform init -input=false'
+                    sh 'terraform plan -out=tfplan'
+                }
+            }
+        }
+
+        stage('Terraform Apply') {
+            when { branch 'main' }
+            steps {
+                dir(env.TF_DIR) {
+                    input message: 'Apply infra changes?'
+                    sh 'terraform apply -input=false tfplan'
+                }
+            }
+        }
+
+        stage('Ansible Configure Nodes') {
+            steps {
+                sh '''
+                    ansible-playbook -i ansible/inventory/aws_ec2.yml \
+                      ansible/playbooks/site.yml
+                '''
+            }
+        }
+
+        stage('Update kubeconfig') {
+            steps {
+                sh "aws eks update-kubeconfig --name ${CLUSTER_NAME} --region ${AWS_REGION}"
+            }
+        }
+
+        stage('Deploy via ArgoCD') {
+            steps {
+                sh '''
+                    argocd app sync expense-tracker-backend --prune
+                    argocd app wait expense-tracker-backend --health --timeout 300
+                '''
+            }
+        }
+
+        stage('Post-deploy smoke test') {
+            steps {
+                sh 'curl -sf https://api.expense-tracker.example.com/health'
+            }
+        }
+    }
+
+    post {
+        success { slackSend(color: 'good', message: "Deploy OK: ${env.BUILD_URL}") }
+        failure { slackSend(color: 'danger', message: "Deploy FAILED: ${env.BUILD_URL}") }
+    }
+}

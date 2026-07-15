@@ -1,0 +1,13 @@
+---
+- name: Configure application/bastion nodes
+  hosts: role_app
+  become: true
+  roles:
+    - docker
+    - monitoring
+
+- name: Configure monitoring nodes
+  hosts: role_monitoring
+  become: true
+  roles:
+    - monitoring

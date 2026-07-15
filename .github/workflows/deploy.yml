@@ -1,0 +1,64 @@
+name: Deploy Infrastructure & App
+
+on:
+  workflow_dispatch: {}   # adds a "Run workflow" button in the Actions tab
+  push:
+    branches: [main]
+    paths:
+      - 'terraform/**'
+      - 'k8s/**'
+      - 'app/**'
+      - 'docker/**'
+      - '.github/workflows/deploy.yml'
+
+env:
+  AWS_REGION: us-east-1
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Install Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.9.0"
+
+      - name: Install kubectl
+        uses: azure/setup-kubectl@v4
+
+      - name: Install kustomize
+        run: |
+          curl -s "https://raw.githubusercontent.com/kubernetes-sigs/kustomize/master/hack/install_kustomize.sh" | bash
+          sudo mv kustomize /usr/local/bin/
+
+      - name: Install Ansible
+        run: sudo apt-get update && sudo apt-get install -y ansible
+
+      - name: Run full bootstrap (infra + deploy + migration)
+        working-directory: .
+        run: |
+          chmod +x scripts/bootstrap-all.sh
+          ./scripts/bootstrap-all.sh
+        env:
+          # Docker on the runner is already logged in as root; the script's
+          # docker commands work without sudo here.
+          DOCKER_BUILDKIT: "1"
+
+      - name: Post summary
+        if: always()
+        run: |
+          echo "### Deployment finished" >> "$GITHUB_STEP_SUMMARY"
+          echo "Check the 'Run full bootstrap' step log above for the ArgoCD" >> "$GITHUB_STEP_SUMMARY"
+          echo "password, load balancer URL, DB endpoint, and JWT secret —" >> "$GITHUB_STEP_SUMMARY"
+          echo "they are printed at the very end of that step's output." >> "$GITHUB_STEP_SUMMARY"

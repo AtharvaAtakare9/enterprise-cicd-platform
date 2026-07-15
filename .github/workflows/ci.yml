@@ -1,0 +1,96 @@
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+
+env:
+  AWS_REGION: us-east-1
+  ECR_REPOSITORY: expense-tracker-backend
+  IMAGE_TAG: ${{ github.sha }}
+
+jobs:
+  lint-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+          cache-dependency-path: app/package-lock.json
+
+      - name: Install deps
+        working-directory: app
+        run: npm ci
+
+      - name: Lint
+        working-directory: app
+        run: npx eslint . || true
+
+      - name: Run tests
+        working-directory: app
+        env:
+          NODE_ENV: test
+        run: npm test
+
+  build-scan-push:
+    needs: lint-test
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push'
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to ECR
+        id: ecr-login
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build image
+        run: |
+          docker build -f docker/Dockerfile -t $ECR_REPOSITORY:$IMAGE_TAG .
+          docker tag $ECR_REPOSITORY:$IMAGE_TAG ${{ steps.ecr-login.outputs.registry }}/$ECR_REPOSITORY:$IMAGE_TAG
+          docker tag $ECR_REPOSITORY:$IMAGE_TAG ${{ steps.ecr-login.outputs.registry }}/$ECR_REPOSITORY:latest
+
+      - name: Scan image (Trivy)
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: '${{ env.ECR_REPOSITORY }}:${{ env.IMAGE_TAG }}'
+          format: table
+          severity: 'CRITICAL,HIGH'
+          exit-code: '0'
+
+      - name: Push to ECR
+        run: |
+          docker push ${{ steps.ecr-login.outputs.registry }}/$ECR_REPOSITORY:$IMAGE_TAG
+          docker push ${{ steps.ecr-login.outputs.registry }}/$ECR_REPOSITORY:latest
+
+      - name: Update k8s manifest image tag (GitOps)
+        run: |
+          sed -i "s|image: .*expense-tracker-backend.*|image: ${{ steps.ecr-login.outputs.registry }}/$ECR_REPOSITORY:$IMAGE_TAG|" k8s/overlays/prod/kustomization.yaml
+          git config user.name "github-actions"
+          git config user.email "actions@github.com"
+          git add k8s/overlays/prod/kustomization.yaml
+          git commit -m "chore: bump image to $IMAGE_TAG [skip ci]" || echo "nothing to commit"
+          git push
+
+      - name: Notify Slack
+        if: always()
+        uses: slackapi/slack-github-action@v1.27.0
+        with:
+          payload: |
+            {"text":"Build ${{ job.status }} for ${{ github.repository }} @ ${{ github.sha }}"}
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}

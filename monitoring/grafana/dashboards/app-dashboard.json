@@ -1,0 +1,27 @@
+{
+  "title": "Expense Tracker Backend",
+  "panels": [
+    {
+      "type": "graph",
+      "title": "Request rate",
+      "targets": [{ "expr": "rate(http_requests_total[5m])" }]
+    },
+    {
+      "type": "graph",
+      "title": "Pod CPU usage",
+      "targets": [{ "expr": "rate(container_cpu_usage_seconds_total{pod=~\"expense-tracker-backend.*\"}[5m])" }]
+    },
+    {
+      "type": "graph",
+      "title": "Pod Memory usage",
+      "targets": [{ "expr": "container_memory_usage_bytes{pod=~\"expense-tracker-backend.*\"}" }]
+    },
+    {
+      "type": "stat",
+      "title": "Pod restarts",
+      "targets": [{ "expr": "kube_pod_container_status_restarts_total{pod=~\"expense-tracker-backend.*\"}" }]
+    }
+  ],
+  "schemaVersion": 39,
+  "version": 1
+}

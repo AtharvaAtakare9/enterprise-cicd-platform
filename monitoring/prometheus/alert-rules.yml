@@ -1,0 +1,26 @@
+groups:
+  - name: expense-tracker-alerts
+    rules:
+      - alert: HighErrorRate
+        expr: rate(http_requests_total{status=~"5.."}[5m]) > 0.05
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "High 5xx error rate on expense-tracker-backend"
+
+      - alert: PodCrashLooping
+        expr: rate(kube_pod_container_status_restarts_total[15m]) > 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Pod restarting repeatedly"
+
+      - alert: HighMemoryUsage
+        expr: container_memory_usage_bytes{pod=~"expense-tracker-backend.*"} > 220000000
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Memory usage near limit"

@@ -1,0 +1,19 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: expense-tracker-db-migrate
+  annotations:
+    argocd.argoproj.io/hook: PreSync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
+spec:
+  backoffLimit: 3
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: migrate
+          image: REPLACE_ME/expense-tracker-backend:latest
+          command: ["npm", "run", "migrate"]
+          envFrom:
+            - secretRef:
+                name: expense-tracker-secrets
