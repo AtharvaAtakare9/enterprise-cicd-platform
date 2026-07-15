@@ -14,19 +14,51 @@ env:
 jobs:
   lint-test:
     runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: expense_tracker_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U postgres"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+
     steps:
       - uses: actions/checkout@v4
 
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: '18'
-          cache: 'npm'
+          node-version: "18"
+          cache: npm
           cache-dependency-path: app/package-lock.json
 
-      - name: Install deps
+      - name: Install dependencies
         working-directory: app
         run: npm ci
+
+      - name: Wait for PostgreSQL
+        run: |
+          until pg_isready -h localhost -p 5432 -U postgres; do
+            echo "Waiting for PostgreSQL..."
+            sleep 2
+          done
+
+      - name: Run database migrations
+        working-directory: app
+        env:
+          NODE_ENV: test
+          TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/expense_tracker_test
+          JWT_SECRET: super-secret-passphrase
+          JWT_EXPIRY: 1d
+        run: npm run migrate:test
 
       - name: Lint
         working-directory: app
@@ -36,15 +68,20 @@ jobs:
         working-directory: app
         env:
           NODE_ENV: test
+          TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/expense_tracker_test
+          JWT_SECRET: super-secret-passphrase
+          JWT_EXPIRY: 1d
         run: npm test
 
   build-scan-push:
     needs: lint-test
-    runs-on: ubuntu-latest
     if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+
     permissions:
       id-token: write
       contents: read
+
     steps:
       - uses: actions/checkout@v4
 
@@ -54,36 +91,38 @@ jobs:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
 
-      - name: Login to ECR
+      - name: Login to Amazon ECR
         id: ecr-login
         uses: aws-actions/amazon-ecr-login@v2
 
-      - name: Build image
+      - name: Build Docker image
         run: |
           docker build -f docker/Dockerfile -t $ECR_REPOSITORY:$IMAGE_TAG .
           docker tag $ECR_REPOSITORY:$IMAGE_TAG ${{ steps.ecr-login.outputs.registry }}/$ECR_REPOSITORY:$IMAGE_TAG
           docker tag $ECR_REPOSITORY:$IMAGE_TAG ${{ steps.ecr-login.outputs.registry }}/$ECR_REPOSITORY:latest
 
-      - name: Scan image (Trivy)
+      - name: Scan image with Trivy
         uses: aquasecurity/trivy-action@master
         with:
-          image-ref: '${{ env.ECR_REPOSITORY }}:${{ env.IMAGE_TAG }}'
+          image-ref: "${{ env.ECR_REPOSITORY }}:${{ env.IMAGE_TAG }}"
           format: table
-          severity: 'CRITICAL,HIGH'
-          exit-code: '0'
+          severity: CRITICAL,HIGH
+          exit-code: "0"
 
-      - name: Push to ECR
+      - name: Push image to ECR
         run: |
           docker push ${{ steps.ecr-login.outputs.registry }}/$ECR_REPOSITORY:$IMAGE_TAG
           docker push ${{ steps.ecr-login.outputs.registry }}/$ECR_REPOSITORY:latest
 
-      - name: Update k8s manifest image tag (GitOps)
+      - name: Update Kubernetes manifest
         run: |
           sed -i "s|image: .*expense-tracker-backend.*|image: ${{ steps.ecr-login.outputs.registry }}/$ECR_REPOSITORY:$IMAGE_TAG|" k8s/overlays/prod/kustomization.yaml
+
           git config user.name "github-actions"
           git config user.email "actions@github.com"
+
           git add k8s/overlays/prod/kustomization.yaml
-          git commit -m "chore: bump image to $IMAGE_TAG [skip ci]" || echo "nothing to commit"
+          git commit -m "chore: bump image to $IMAGE_TAG [skip ci]" || echo "Nothing to commit"
           git push
 
       - name: Notify Slack
@@ -91,6 +130,8 @@ jobs:
         uses: slackapi/slack-github-action@v1.27.0
         with:
           payload: |
-            {"text":"Build ${{ job.status }} for ${{ github.repository }} @ ${{ github.sha }}"}
+            {
+              "text":"Build ${{ job.status }} for ${{ github.repository }} @ ${{ github.sha }}"
+            }
         env:
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
