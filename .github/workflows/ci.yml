@@ -206,17 +206,3 @@ jobs:
           git push
 
 
-
-      - name: Notify Slack
-        if: always()
-        uses: slackapi/slack-github-action@v1.27.0
-        with:
-          payload: |
-            {
-              "text": "Build ${{ job.status }} for ${{ github.repository }}"
-            }
-        env:
-          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
-
-
-          
