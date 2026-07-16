@@ -51,6 +51,14 @@ jobs:
             sleep 2
           done
 
+      - name: Show migration files
+        working-directory: app
+        run: |
+          echo "Current directory:"
+          pwd
+          echo "Migration files:"
+          ls -la migrations
+
       - name: Run database migrations
         working-directory: app
         env:
@@ -58,7 +66,15 @@ jobs:
           TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/expense_tracker_test
           JWT_SECRET: super-secret-passphrase
           JWT_EXPIRY: 1d
-        run: npm run migrate:test
+        run: |
+          npm run migrate:test
+
+      - name: Verify database tables
+        env:
+          PGPASSWORD: postgres
+        run: |
+          echo "Existing tables:"
+          psql -h localhost -U postgres -d expense_tracker_test -c "\dt"
 
       - name: Lint
         working-directory: app
@@ -135,3 +151,4 @@ jobs:
             }
         env:
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          
