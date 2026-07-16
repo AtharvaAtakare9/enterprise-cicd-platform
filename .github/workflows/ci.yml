@@ -5,6 +5,7 @@ on:
     branches:
       - main
       - develop
+
   pull_request:
     branches:
       - main
@@ -15,6 +16,7 @@ env:
   IMAGE_TAG: ${{ github.sha }}
 
 jobs:
+
   lint-test:
     runs-on: ubuntu-latest
 
@@ -34,18 +36,23 @@ jobs:
           --health-retries=5
 
     steps:
-      - uses: actions/checkout@v4
+
+      - name: Checkout code
+        uses: actions/checkout@v4
+
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 18
+          node-version: "18"
           cache: npm
           cache-dependency-path: app/package-lock.json
+
 
       - name: Install dependencies
         working-directory: app
         run: npm ci
+
 
       - name: Wait for PostgreSQL
         env:
@@ -56,12 +63,14 @@ jobs:
             sleep 2
           done
 
+
       - name: Show migration files
         working-directory: app
         run: |
           pwd
           ls -la
           ls -la migrations
+
 
       - name: Run database migrations
         working-directory: app
@@ -73,15 +82,19 @@ jobs:
         run: |
           npm run migrate:test
 
+
       - name: Verify database tables
         env:
           PGPASSWORD: postgres
         run: |
           psql -h localhost -U postgres -d expense_tracker_test -c "\dt"
 
+
       - name: Lint
         working-directory: app
-        run: npx eslint . || true
+        run: |
+          npx eslint . || true
+
 
       - name: Run tests
         working-directory: app
@@ -90,37 +103,70 @@ jobs:
           TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/expense_tracker_test
           JWT_SECRET: super-secret-passphrase
           JWT_EXPIRY: 1d
-        run: npm test
+        run: |
+          npm test
+
+
 
   build-scan-push:
+
     needs: lint-test
+
     if: github.event_name == 'push'
+
     runs-on: ubuntu-latest
 
     permissions:
       id-token: write
       contents: read
 
-    steps:
-      - uses: actions/checkout@v4
 
-      - name: Configure AWS credentials
+    steps:
+
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+
+      - name: Debug GitHub Context
+        run: |
+          echo "Repository: ${{ github.repository }}"
+          echo "Branch: ${{ github.ref }}"
+          echo "Actor: ${{ github.actor }}"
+
+
+      - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
 
+
+      - name: Verify AWS Identity
+        run: |
+          aws sts get-caller-identity
+
+
       - name: Login to Amazon ECR
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
 
-      - name: Build Docker image
-        run: |
-          docker build -f docker/Dockerfile -t $ECR_REPOSITORY:$IMAGE_TAG .
-          docker tag $ECR_REPOSITORY:$IMAGE_TAG ${{ steps.login-ecr.outputs.registry }}/$ECR_REPOSITORY:$IMAGE_TAG
-          docker tag $ECR_REPOSITORY:$IMAGE_TAG ${{ steps.login-ecr.outputs.registry }}/$ECR_REPOSITORY:latest
 
-      - name: Scan image with Trivy
+      - name: Build Docker Image
+        run: |
+          docker build \
+          -f docker/Dockerfile \
+          -t $ECR_REPOSITORY:$IMAGE_TAG .
+
+          docker tag \
+          $ECR_REPOSITORY:$IMAGE_TAG \
+          ${{ steps.login-ecr.outputs.registry }}/$ECR_REPOSITORY:$IMAGE_TAG
+
+          docker tag \
+          $ECR_REPOSITORY:$IMAGE_TAG \
+          ${{ steps.login-ecr.outputs.registry }}/$ECR_REPOSITORY:latest
+
+
+      - name: Scan Image with Trivy
         uses: aquasecurity/trivy-action@master
         with:
           image-ref: "${{ env.ECR_REPOSITORY }}:${{ env.IMAGE_TAG }}"
@@ -128,21 +174,38 @@ jobs:
           severity: CRITICAL,HIGH
           exit-code: "0"
 
-      - name: Push image to ECR
+
+      - name: Push Image to ECR
         run: |
           docker push ${{ steps.login-ecr.outputs.registry }}/$ECR_REPOSITORY:$IMAGE_TAG
           docker push ${{ steps.login-ecr.outputs.registry }}/$ECR_REPOSITORY:latest
 
-      - name: Update Kubernetes manifest
+
+
+      - name: Update Kubernetes Manifest
         run: |
-          sed -i "s|image: .*expense-tracker-backend.*|image: ${{ steps.login-ecr.outputs.registry }}/$ECR_REPOSITORY:$IMAGE_TAG|" k8s/overlays/prod/kustomization.yaml
+
+          sed -i \
+          "s|image: .*expense-tracker-backend.*|image: ${{ steps.login-ecr.outputs.registry }}/$ECR_REPOSITORY:$IMAGE_TAG|" \
+          k8s/overlays/prod/kustomization.yaml
+
 
           git config user.name "github-actions"
+
           git config user.email "actions@github.com"
 
+
           git add k8s/overlays/prod/kustomization.yaml
-          git commit -m "chore: bump image to $IMAGE_TAG [skip ci]" || echo "Nothing to commit"
+
+
+          git commit \
+          -m "chore: update image $IMAGE_TAG [skip ci]" \
+          || echo "Nothing to commit"
+
+
           git push
+
+
 
       - name: Notify Slack
         if: always()
@@ -150,7 +213,7 @@ jobs:
         with:
           payload: |
             {
-              "text": "Build ${{ job.status }} for ${{ github.repository }} @ ${{ github.sha }}"
+              "text": "Build ${{ job.status }} for ${{ github.repository }}"
             }
         env:
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
