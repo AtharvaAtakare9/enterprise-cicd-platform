@@ -153,22 +153,29 @@ function cleanTables(db) {
 function seedUsersTable(db, users) {
     const preppedUsers = users.map(user => ({
         ...user,
-        password: bcrypt.hashSync(user.password, 1)
-    }))
-    return db.into('users').insert(preppedUsers)
+        password: bcrypt.hashSync(user.password, 1),
+    }));
+
+    return db
+        .into('users')
+        .insert(preppedUsers)
         .then(() => {
-            db.raw(
-                `SELECT setval('users_id_seq', ?)`, [users[users.length - 1].id]
-            )
-        })
+            return db.raw(
+                `SELECT setval('users_id_seq', ?)`,
+                [users[users.length - 1].id]
+            );
+        });
 }
 
 function seedExpenseTable(db, expenses) {
     return db.transaction(async trx => {
-        
-        await trx.into('expense').insert(expenses)
-        await trx.raw(`SELECT setval('expense_id_seq', ?)`, [expenses[expenses.length - 1].id])
-    })
+        await trx.into('expense').insert(expenses);
+
+        return trx.raw(
+            `SELECT setval('expense_id_seq', ?)`,
+            [expenses[expenses.length - 1].id]
+        );
+    });
 }  
 
 function makeAuthHeader(user, secret = process.env.JWT_SECRET) {
