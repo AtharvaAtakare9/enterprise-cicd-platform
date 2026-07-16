@@ -11,7 +11,7 @@ terraform {
     }
   }
   backend "s3" {
-    bucket = "expense-tracker-tfstate"
+    bucket = "expense-tracker-tfstate-259151461533"
     key    = "prod/terraform.tfstate"
     region = "us-east-1"
   }
