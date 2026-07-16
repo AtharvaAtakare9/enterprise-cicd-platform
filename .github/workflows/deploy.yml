@@ -1,14 +1,17 @@
 name: Deploy Infrastructure & App
 
 on:
-  workflow_dispatch: {}   # adds a "Run workflow" button in the Actions tab
+  workflow_dispatch:
+
   push:
-    branches: [main]
+    branches:
+      - main
     paths:
       - 'terraform/**'
       - 'k8s/**'
       - 'app/**'
       - 'docker/**'
+      - 'scripts/**'
       - '.github/workflows/deploy.yml'
 
 env:
@@ -17,11 +20,21 @@ env:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+
     permissions:
       id-token: write
       contents: read
+
     steps:
       - uses: actions/checkout@v4
+
+      - name: Show config.env
+        run: |
+          cat scripts/config.env
+
+      - name: Show bootstrap script
+        run: |
+          head -40 scripts/bootstrap-all.sh
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
@@ -43,17 +56,17 @@ jobs:
           sudo mv kustomize /usr/local/bin/
 
       - name: Install Ansible
-        run: sudo apt-get update && sudo apt-get install -y ansible
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ansible
 
       - name: Run full bootstrap (infra + deploy + migration)
         working-directory: .
+        env:
+          DOCKER_BUILDKIT: "1"
         run: |
           chmod +x scripts/bootstrap-all.sh
           ./scripts/bootstrap-all.sh
-        env:
-          # Docker on the runner is already logged in as root; the script's
-          # docker commands work without sudo here.
-          DOCKER_BUILDKIT: "1"
 
       - name: Post summary
         if: always()
