@@ -26,15 +26,25 @@ jobs:
       contents: read
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-      - name: Show config.env
+      ####################################################################
+      # DEBUG - REMOVE AFTER ISSUE IS FIXED
+      ####################################################################
+      - name: Debug deployment files
         run: |
+          echo "===== config.env ====="
           cat scripts/config.env
 
-      - name: Show bootstrap script
-        run: |
-          head -40 scripts/bootstrap-all.sh
+          echo ""
+          echo "===== bootstrap-all.sh ====="
+          grep -A12 "Creating Terraform state bucket" scripts/bootstrap-all.sh
+
+          echo ""
+          echo "===== terraform backend ====="
+          head -20 terraform/envs/prod/main.tf
+      ####################################################################
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
@@ -72,6 +82,10 @@ jobs:
         if: always()
         run: |
           echo "### Deployment finished" >> "$GITHUB_STEP_SUMMARY"
-          echo "Check the 'Run full bootstrap' step log above for the ArgoCD" >> "$GITHUB_STEP_SUMMARY"
-          echo "password, load balancer URL, DB endpoint, and JWT secret —" >> "$GITHUB_STEP_SUMMARY"
-          echo "they are printed at the very end of that step's output." >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "Review the 'Run full bootstrap' step for:" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Terraform output" >> "$GITHUB_STEP_SUMMARY"
+          echo "- ArgoCD password" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Load Balancer URL" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Database endpoint" >> "$GITHUB_STEP_SUMMARY"
+          echo "- JWT secret" >> "$GITHUB_STEP_SUMMARY"
