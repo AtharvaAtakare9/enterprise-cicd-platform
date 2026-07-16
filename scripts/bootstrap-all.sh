@@ -107,6 +107,9 @@ else
 fi
 
 echo "=== [3/10] Creating Terraform state bucket (skips if it exists) ==="
+ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+TF_STATE_BUCKET="${TF_STATE_BUCKET}-${ACCOUNT_ID}"
+echo "-- using bucket name: $TF_STATE_BUCKET (account ID appended for global uniqueness)"
 if ! aws s3api head-bucket --bucket "$TF_STATE_BUCKET" 2>/dev/null; then
   aws s3 mb "s3://$TF_STATE_BUCKET" --region "$AWS_REGION"
   aws s3api put-bucket-versioning --bucket "$TF_STATE_BUCKET" --versioning-configuration Status=Enabled
@@ -116,7 +119,7 @@ fi
 
 echo "=== [4/10] Terraform init/plan/apply (VPC, EKS, ECR, ALB, EC2, RDS) ==="
 cd "$ROOT_DIR/terraform/envs/prod"
-terraform init -input=false
+terraform init -input=false -backend-config="bucket=${TF_STATE_BUCKET}"
 terraform plan -out=tfplan -input=false -var="key_pair_name=${KEY_PAIR_NAME}"
 terraform apply -input=false -auto-approve tfplan
 
