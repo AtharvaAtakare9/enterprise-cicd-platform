@@ -9,10 +9,12 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT_DIR"
 source scripts/config.env
+ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+TF_STATE_BUCKET="${TF_STATE_BUCKET}-${ACCOUNT_ID}"
 
 echo "=== Reading infra details from Terraform state (shared via S3 backend) ==="
 cd terraform/envs/prod
-terraform init -input=false
+terraform init -input=false -backend-config="bucket=${TF_STATE_BUCKET}"
 ECR_URL=$(terraform output -raw ecr_repository_url)
 ECR_REGISTRY="${ECR_URL%%/*}"
 ALB_DNS=$(terraform output -raw alb_dns_name)
