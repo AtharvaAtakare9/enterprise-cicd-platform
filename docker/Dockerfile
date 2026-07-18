@@ -3,6 +3,7 @@ FROM node:18-alpine AS build
 WORKDIR /app
 COPY app/package*.json ./
 RUN npm ci --only=production
+RUN npm install postgrator-cli@^4.0.0 --no-save
 
 # ---- runtime stage ----
 FROM node:18-alpine
@@ -15,5 +16,5 @@ ENV PORT=8000
 USER app
 EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-  CMD wget -qO- http://localhost:8000/ || exit 1
+  CMD wget -qO- http://localhost:8000/health || exit 1
 CMD ["node", "src/server.js"]
