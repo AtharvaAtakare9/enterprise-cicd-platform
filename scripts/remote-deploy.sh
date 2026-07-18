@@ -23,7 +23,7 @@ DB_PORT=$(terraform output -raw db_port)
 DB_NAME=$(terraform output -raw db_name)
 DB_USER=$(terraform output -raw db_username)
 DB_PASS=$(terraform output -raw db_password)
-DATABASE_URL="postgresql://${DB_USER}:${DB_PASS}@${DB_ENDPOINT}:${DB_PORT}/${DB_NAME}"
+DATABASE_URL="postgresql://${DB_USER}:${DB_PASS}@${DB_ENDPOINT}:${DB_PORT}/${DB_NAME}?sslmode=require"
 cd "$ROOT_DIR"
 
 if [ -z "${JWT_SECRET:-}" ]; then
