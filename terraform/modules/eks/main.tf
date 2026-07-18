@@ -48,10 +48,11 @@ resource "aws_iam_role_policy_attachment" "cluster_policy" {
 }
 
 resource "aws_eks_cluster" "this" {
-  name     = var.cluster_name
-  role_arn = aws_iam_role.cluster.arn
-  # No explicit version set — AWS automatically uses its current default
-  # supported version, avoiding future "unsupported version" errors.
+     name     = var.cluster_name
+     role_arn = aws_iam_role.cluster.arn
+     version  = "1.32"
+   
+     
 
   vpc_config {
     subnet_ids              = var.subnet_ids
