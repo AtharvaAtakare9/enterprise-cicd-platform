@@ -19,6 +19,10 @@ app.use(morgan(morganOption));
 app.use(helmet());
 app.use(cors());
 
+app.get('/health', (req, res) => {
+  res.status(200).json({ status: 'ok' })
+})
+
 //Routers
 app.use('/api/auth', authRouter)
 app.use('/api/users', usersRouter)
