@@ -1,17 +1,14 @@
 name: Deploy Infrastructure & App
 
 on:
-  workflow_dispatch:
-
+  workflow_dispatch: {}   # adds a "Run workflow" button in the Actions tab
   push:
-    branches:
-      - main
+    branches: [main]
     paths:
       - 'terraform/**'
       - 'k8s/**'
       - 'app/**'
       - 'docker/**'
-      - 'scripts/**'
       - '.github/workflows/deploy.yml'
 
 env:
@@ -20,31 +17,11 @@ env:
 jobs:
   deploy:
     runs-on: ubuntu-latest
-
     permissions:
       id-token: write
       contents: read
-
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      ####################################################################
-      # DEBUG - REMOVE AFTER ISSUE IS FIXED
-      ####################################################################
-      - name: Debug deployment files
-        run: |
-          echo "===== config.env ====="
-          cat scripts/config.env
-
-          echo ""
-          echo "===== bootstrap-all.sh ====="
-          grep -A12 "Creating Terraform state bucket" scripts/bootstrap-all.sh
-
-          echo ""
-          echo "===== terraform backend ====="
-          head -20 terraform/envs/prod/main.tf
-      ####################################################################
+      - uses: actions/checkout@v4
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
@@ -62,30 +39,28 @@ jobs:
 
       - name: Install kustomize
         run: |
-          curl -s "https://raw.githubusercontent.com/kubernetes-sigs/kustomize/master/hack/install_kustomize.sh" | bash
+          curl -L -o kustomize.tar.gz "https://github.com/kubernetes-sigs/kustomize/releases/download/kustomize%2Fv5.4.3/kustomize_v5.4.3_linux_amd64.tar.gz"
+          tar -xzf kustomize.tar.gz
           sudo mv kustomize /usr/local/bin/
+          rm -f kustomize.tar.gz
 
       - name: Install Ansible
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y ansible
+        run: sudo apt-get update && sudo apt-get install -y ansible
 
       - name: Run full bootstrap (infra + deploy + migration)
         working-directory: .
-        env:
-          DOCKER_BUILDKIT: "1"
         run: |
           chmod +x scripts/bootstrap-all.sh
           ./scripts/bootstrap-all.sh
+        env:
+          # Docker on the runner is already logged in as root; the script's
+          # docker commands work without sudo here.
+          DOCKER_BUILDKIT: "1"
 
       - name: Post summary
         if: always()
         run: |
           echo "### Deployment finished" >> "$GITHUB_STEP_SUMMARY"
-          echo "" >> "$GITHUB_STEP_SUMMARY"
-          echo "Review the 'Run full bootstrap' step for:" >> "$GITHUB_STEP_SUMMARY"
-          echo "- Terraform output" >> "$GITHUB_STEP_SUMMARY"
-          echo "- ArgoCD password" >> "$GITHUB_STEP_SUMMARY"
-          echo "- Load Balancer URL" >> "$GITHUB_STEP_SUMMARY"
-          echo "- Database endpoint" >> "$GITHUB_STEP_SUMMARY"
-          echo "- JWT secret" >> "$GITHUB_STEP_SUMMARY"
+          echo "Check the 'Run full bootstrap' step log above for the ArgoCD" >> "$GITHUB_STEP_SUMMARY"
+          echo "password, load balancer URL, DB endpoint, and JWT secret —" >> "$GITHUB_STEP_SUMMARY"
+          echo "they are printed at the very end of that step's output." >> "$GITHUB_STEP_SUMMARY"

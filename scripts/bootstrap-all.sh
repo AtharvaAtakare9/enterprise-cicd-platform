@@ -60,6 +60,12 @@ check_or_install kubectl '
   sudo install -o root -g root -m 0755 kubectl /usr/local/bin/kubectl
 ' 'winget install -e --id Kubernetes.kubectl' || MISSING=1
 
+check_or_install kustomize '
+  curl -L -o /tmp/kustomize.tar.gz "https://github.com/kubernetes-sigs/kustomize/releases/download/kustomize%2Fv5.4.3/kustomize_v5.4.3_linux_amd64.tar.gz"
+  tar -xzf /tmp/kustomize.tar.gz -C /tmp
+  sudo mv /tmp/kustomize /usr/local/bin/
+  rm -f /tmp/kustomize.tar.gz
+' 'choco install kustomize   (or download from https://github.com/kubernetes-sigs/kustomize/releases)' || MISSING=1
 
 check_or_install aws '
   curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
@@ -103,7 +109,9 @@ else
 fi
 
 echo "=== [3/10] Creating Terraform state bucket (skips if it exists) ==="
-echo "-- using bucket: $TF_STATE_BUCKET"
+ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+TF_STATE_BUCKET="${TF_STATE_BUCKET}-${ACCOUNT_ID}"
+echo "-- using bucket name: $TF_STATE_BUCKET (account ID appended for global uniqueness)"
 if ! aws s3api head-bucket --bucket "$TF_STATE_BUCKET" 2>/dev/null; then
   aws s3 mb "s3://$TF_STATE_BUCKET" --region "$AWS_REGION"
   aws s3api put-bucket-versioning --bucket "$TF_STATE_BUCKET" --versioning-configuration Status=Enabled
@@ -126,7 +134,7 @@ DB_PORT=$(terraform output -raw db_port)
 DB_NAME=$(terraform output -raw db_name)
 DB_USER=$(terraform output -raw db_username)
 DB_PASS=$(terraform output -raw db_password)
-DATABASE_URL="postgresql://${DB_USER}:${DB_PASS}@${DB_ENDPOINT}:${DB_PORT}/${DB_NAME}"
+DATABASE_URL="postgresql://${DB_USER}:${DB_PASS}@${DB_ENDPOINT}:${DB_PORT}/${DB_NAME}?sslmode=require"
 cd "$ROOT_DIR"
 
 if [ -z "${JWT_SECRET:-}" ]; then
