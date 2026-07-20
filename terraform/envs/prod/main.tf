@@ -11,9 +11,10 @@ terraform {
     }
   }
   backend "s3" {
-    bucket = "expense-tracker-tfstate-259151461533"
     key    = "prod/terraform.tfstate"
     region = "us-east-1"
+    # bucket is supplied at `terraform init` time via -backend-config,
+    # since it must be unique per-AWS-account (see scripts/bootstrap-all.sh)
   }
 }
 
@@ -40,13 +41,6 @@ module "eks" {
   subnet_ids   = module.vpc.private_subnet_ids
 }
 
-module "alb" {
-  source            = "../../modules/alb"
-  name              = "expense-tracker"
-  vpc_id            = module.vpc.vpc_id
-  public_subnet_ids = module.vpc.public_subnet_ids
-}
-
 module "rds" {
   source              = "../../modules/rds"
   vpc_id              = module.vpc.vpc_id
@@ -56,7 +50,6 @@ module "rds" {
 
 output "ecr_repository_url" { value = module.ecr.repository_url }
 output "eks_cluster_name"   { value = module.eks.cluster_name }
-output "alb_dns_name"       { value = module.alb.alb_dns_name }
 output "db_endpoint"        { value = module.rds.endpoint }
 output "db_port"            { value = module.rds.port }
 output "db_name"            { value = module.rds.db_name }
