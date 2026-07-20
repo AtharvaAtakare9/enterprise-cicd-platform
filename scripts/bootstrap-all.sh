@@ -2,7 +2,7 @@
 # bootstrap-all.sh
 # Works from Git Bash (Windows) OR a real Linux/WSL/macOS shell.
 # Fully automated: checks/installs tools where possible, creates key pair,
-# builds AWS infra (VPC/EKS/ECR/ALB/EC2/RDS), configures servers with Ansible
+# builds AWS infra (VPC/EKS/ECR/EC2/RDS), configures servers with Ansible
 # (skipped automatically if not on Linux), installs ArgoCD, creates secrets,
 # wires the ECR registry, and deploys the app. Database migrations run
 # automatically inside the cluster as a Kubernetes Job on every deploy.
@@ -119,7 +119,7 @@ else
   echo "-- bucket $TF_STATE_BUCKET already exists"
 fi
 
-echo "=== [4/10] Terraform init/plan/apply (VPC, EKS, ECR, ALB, EC2, RDS) ==="
+echo "=== [4/10] Terraform init/plan/apply (VPC, EKS, ECR, EC2, RDS) ==="
 cd "$ROOT_DIR/terraform/envs/prod"
 terraform init -input=false -backend-config="bucket=${TF_STATE_BUCKET}"
 terraform plan -out=tfplan -input=false -var="key_pair_name=${KEY_PAIR_NAME}"
@@ -127,7 +127,6 @@ terraform apply -input=false -auto-approve tfplan
 
 ECR_URL=$(terraform output -raw ecr_repository_url)
 ECR_REGISTRY="${ECR_URL%%/*}"
-ALB_DNS=$(terraform output -raw alb_dns_name)
 EC2_IP=$(terraform output -raw ec2_public_ip)
 DB_ENDPOINT=$(terraform output -raw db_endpoint)
 DB_PORT=$(terraform output -raw db_port)
@@ -158,6 +157,31 @@ fi
 
 echo "=== [6/10] Connecting kubectl to the cluster ==="
 aws eks update-kubeconfig --name "$CLUSTER_NAME" --region "$AWS_REGION"
+
+echo "-- ensuring cluster access mode allows access entries..."
+aws eks update-cluster-config --name "$CLUSTER_NAME" --region "$AWS_REGION" \
+  --access-config authenticationMode=API_AND_CONFIG_MAP >/dev/null 2>&1 || true
+for i in $(seq 1 20); do
+  STATUS=$(aws eks describe-cluster --name "$CLUSTER_NAME" --region "$AWS_REGION" --query "cluster.status" --output text 2>/dev/null || echo "")
+  [ "$STATUS" = "ACTIVE" ] && break
+  sleep 10
+done
+
+echo "-- granting the current AWS identity kubectl access..."
+MY_ARN=$(aws sts get-caller-identity --query Arn --output text)
+aws eks create-access-entry --cluster-name "$CLUSTER_NAME" --region "$AWS_REGION" \
+  --principal-arn "$MY_ARN" --type STANDARD >/dev/null 2>&1 || true
+aws eks associate-access-policy --cluster-name "$CLUSTER_NAME" --region "$AWS_REGION" \
+  --principal-arn "$MY_ARN" --access-scope type=cluster \
+  --policy-arn arn:aws:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy >/dev/null 2>&1 || true
+
+echo "-- opening NodePort range on the cluster security group..."
+CLUSTER_SG=$(aws eks describe-cluster --name "$CLUSTER_NAME" --region "$AWS_REGION" \
+  --query "cluster.resourcesVpcConfig.clusterSecurityGroupId" --output text)
+aws ec2 authorize-security-group-ingress --region "$AWS_REGION" \
+  --group-id "$CLUSTER_SG" --protocol tcp --port 30000-32767 --cidr 0.0.0.0/0 >/dev/null 2>&1 || \
+  echo "-- (rule likely already exists, continuing)"
+
 kubectl get nodes
 
 echo "=== [7/10] Installing ArgoCD ==="
@@ -198,9 +222,18 @@ kubectl -n expense-tracker-prod wait --for=condition=complete job/expense-tracke
   echo "-- migration job did not report complete in time, check with: kubectl -n expense-tracker-prod logs job/expense-tracker-db-migrate"
 
 echo ""
+echo "-- waiting for the LoadBalancer service to get a real address (can take 2-3 min)..."
+SVC_LB=""
+for i in $(seq 1 30); do
+  SVC_LB=$(kubectl -n expense-tracker-prod get svc expense-tracker-backend -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null || true)
+  if [ -n "$SVC_LB" ]; then break; fi
+  sleep 10
+done
+
+echo ""
 echo "================ DONE ================"
 echo "ArgoCD admin password  : $ARGOCD_PASS"
-echo "Load balancer address  : http://$ALB_DNS/"
+echo "App URL (use this one) : http://${SVC_LB:-<not-ready-yet-check-kubectl-get-svc>}/"
 echo "EC2 server public IP   : $EC2_IP  (ssh -i ${KEY_PAIR_NAME}.pem ubuntu@$EC2_IP)"
 echo "Database endpoint      : $DB_ENDPOINT (tables created automatically by the migration Job)"
 echo "JWT secret used        : $JWT_SECRET"
