@@ -118,7 +118,7 @@ jobs:
 
     permissions:
       id-token: write
-      contents: write 
+      contents: write
 
 
     steps:
@@ -185,10 +185,7 @@ jobs:
       - name: Update Kubernetes Manifest
         run: |
 
-          sed -i \
-          "s|image: .*expense-tracker-backend.*|image: ${{ steps.login-ecr.outputs.registry }}/$ECR_REPOSITORY:$IMAGE_TAG|" \
-          k8s/overlays/prod/kustomization.yaml
-
+          sed -i "s|newTag: .*|newTag: $IMAGE_TAG|" k8s/overlays/prod/kustomization.yaml
 
           git config user.name "github-actions"
 
