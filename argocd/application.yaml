@@ -6,7 +6,7 @@ metadata:
 spec:
   project: default
   source:
-    repoURL: https://github.com/Andacanaver/expense-tracker-backend.git
+    repoURL: https://github.com/AtharvaAtakare9/enterprise-cicd-platform.git
     targetRevision: main
     path: k8s/overlays/prod
   destination:
