@@ -5,7 +5,7 @@ metadata:
   labels:
     app: expense-tracker-backend
 spec:
-  replicas: 2
+  replicas: 3
   strategy:
     type: RollingUpdate
     rollingUpdate:
