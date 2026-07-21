@@ -214,7 +214,14 @@ cd k8s/overlays/prod
 kustomize edit set image "REPLACE_ME/expense-tracker-backend=${ECR_REGISTRY}/${ECR_REPO_NAME}:${TAG}"
 cd "$ROOT_DIR"
 
-kubectl -n expense-tracker-prod delete job expense-tracker-db-migrate --ignore-not-found=true
+echo "-- cleaning up any previous migration job (robust, avoids stuck Terminating state)"
+kubectl -n expense-tracker-prod delete pod -l job-name=expense-tracker-db-migrate --force --grace-period=0 --ignore-not-found=true 2>/dev/null || true
+kubectl -n expense-tracker-prod patch job expense-tracker-db-migrate -p '{"metadata":{"finalizers":[]}}' --type=merge 2>/dev/null || true
+kubectl -n expense-tracker-prod delete job expense-tracker-db-migrate --force --grace-period=0 --ignore-not-found=true 2>/dev/null || true
+for i in $(seq 1 15); do
+  kubectl -n expense-tracker-prod get job expense-tracker-db-migrate >/dev/null 2>&1 || break
+  sleep 2
+done
 kubectl apply -k k8s/overlays/prod
 
 echo "-- waiting for migration job to finish..."
