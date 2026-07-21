@@ -47,7 +47,7 @@ describe('Expense Endpoint', function() {
                 return supertest(app)
                     .delete(`/api/expenses/${expenseId}`)
                     .set('Authorization', helpers.makeAuthHeader(testUsers[1]))
-                    .expect(200)
+                    .expect(204)
             })
 
         })
