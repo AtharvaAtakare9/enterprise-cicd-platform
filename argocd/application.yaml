@@ -23,3 +23,8 @@ spec:
       backoff:
         duration: 5s
         maxDuration: 1m
+  ignoreDifferences:
+    - group: apps
+      kind: Deployment
+      jsonPointers:
+        - /spec/replicas
