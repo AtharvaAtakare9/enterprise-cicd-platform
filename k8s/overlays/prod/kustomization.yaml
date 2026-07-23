@@ -6,4 +6,4 @@ resources:
 images:
   - name: REPLACE_ME/expense-tracker-backend
     newName: 259151461533.dkr.ecr.us-east-1.amazonaws.com/expense-tracker-backend
-    newTag: ad8e616
+    newTag: <REAL_TAG>
